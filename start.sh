@@ -9,10 +9,8 @@ export PORT="${PORT:-3000}"
 : "${FLUX_REPO:=black-forest-labs/FLUX.1-dev-gguf}"
 : "${FLUX_FILE:=flux1-dev.gguf}"
 
-: "${QWEN_REPO:=QuantStack/Qwen-Image-Edit-2509-GGUF}"
-: "${QWEN_UNET_FILE:=Qwen-Image-Edit-2509.gguf}"
-: "${QWEN_TXT_FILE:=Qwen2.5-VL-7B.Q8_0.gguf}"
-: "${QWEN_VAE_FILE:=Qwen-Image-Edit-2509.vae.safetensors}"
+# Qwen precision toggle (native Comfy-Org packs): fp8 (default) or bf16
+: "${QWEN_EDIT_PRECISION:=fp8}"
 
 : "${WAN_REPO:=Kijai/WanVideo_comfy}"
 : "${WAN_FILE:=wan-2.2-animate.safetensors}"
@@ -39,20 +37,42 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "[boot] HF_TOKEN not set. Set it in your RunPod template to enable auto-downloads."
 else
   echo "[boot] Installing huggingface_hub ..."
-  pip3 install --quiet --upgrade huggingface_hub
+  # (hf_transfer speeds up downloads; harmless if already present)
+  pip3 install --quiet --upgrade huggingface_hub hf_transfer
+  export HF_HUB_ENABLE_HF_TRANSFER=1
 
+  # ---- FLUX (optional) ----
   echo "[boot] Downloading FLUX ➜ $FLUX_REPO :: $FLUX_FILE"
   huggingface-cli download --token "$HF_TOKEN" "$FLUX_REPO" "$FLUX_FILE" \
     --local-dir "$UNET_DIR" --local-dir-use-symlinks False
 
-  echo "[boot] Downloading Qwen-Image-Edit-2509 components ..."
-  huggingface-cli download --token "$HF_TOKEN" "$QWEN_REPO" "$QWEN_UNET_FILE" \
-    --local-dir "$UNET_DIR" --local-dir-use-symlinks False
-  huggingface-cli download --token "$HF_TOKEN" "$QWEN_REPO" "$QWEN_TXT_FILE" \
+  # ---- Qwen-Image-Edit 2509 (native Comfy-Org packs) ----
+  # Diffusion (pick file by precision)
+  QWEN_EDIT_REPO="Comfy-Org/Qwen-Image-Edit_ComfyUI"
+  if [[ "$QWEN_EDIT_PRECISION" == "bf16" ]]; then
+    QWEN_EDIT_FILE="split_files/diffusion_models/qwen_image_edit_2509_bf16.safetensors"
+  else
+    QWEN_EDIT_FILE="split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors"
+  fi
+
+  echo "[boot] Downloading Qwen-Image-Edit 2509 ($QWEN_EDIT_PRECISION)…"
+  huggingface-cli download --token "$HF_TOKEN" "$QWEN_EDIT_REPO" "$QWEN_EDIT_FILE" \
+    --local-dir "$WAN_DIR" --local-dir-use-symlinks False
+
+  # Text encoder + VAE from the companion pack
+  QWEN_IMG_REPO="Comfy-Org/Qwen-Image_ComfyUI"
+
+  echo "[boot] Downloading Qwen text encoder (fp8_scaled)…"
+  huggingface-cli download --token "$HF_TOKEN" "$QWEN_IMG_REPO" \
+    "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
     --local-dir "$TXT_DIR" --local-dir-use-symlinks False
-  huggingface-cli download --token "$HF_TOKEN" "$QWEN_REPO" "$QWEN_VAE_FILE" \
+
+  echo "[boot] Downloading Qwen VAE…"
+  huggingface-cli download --token "$HF_TOKEN" "$QWEN_IMG_REPO" \
+    "split_files/vae/qwen_image_vae.safetensors" \
     --local-dir "$VAE_DIR" --local-dir-use-symlinks False
 
+  # ---- WAN 2.2 Animate (optional) ----
   echo "[boot] Downloading WAN 2.2 Animate ➜ $WAN_REPO :: $WAN_FILE"
   huggingface-cli download --token "$HF_TOKEN" "$WAN_REPO" "$WAN_FILE" \
     --local-dir "$WAN_DIR" --local-dir-use-symlinks False
