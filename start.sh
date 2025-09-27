@@ -37,15 +37,24 @@ if [[ "${CLEAN_MODELS_ON_BOOT}" == "true" ]]; then
 fi
 
 # ---------------- Helpers ----------------
-ensure_hf_cli() { pip3 install --quiet --upgrade huggingface_hub hf_transfer; }
+# Ensure modern HF CLI ('hf') is available; keep hf_transfer for speed
+ensure_hf_cli() {
+  pip3 install --quiet --upgrade "huggingface_hub>=0.23" hf_transfer
+  export HF_HUB_ENABLE_HF_TRANSFER=1
+}
 
+# Use 'hf download' when available; fall back to 'huggingface-cli download'
 hf_dl() {
   local repo="$1"; local path="$2"; local dest="$3"
+  local cmd="hf"
+  command -v hf >/dev/null 2>&1 || cmd="huggingface-cli"
+
   if [[ -n "${HF_TOKEN:-}" ]]; then
-    huggingface-cli download --token "$HF_TOKEN" "$repo" "$path" \
+    "$cmd" download "$repo" "$path" \
+      --token "$HF_TOKEN" \
       --local-dir "$dest" --local-dir-use-symlinks False
   else
-    huggingface-cli download "$repo" "$path" \
+    "$cmd" download "$repo" "$path" \
       --local-dir "$dest" --local-dir-use-symlinks False
   fi
 }
