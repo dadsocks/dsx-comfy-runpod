@@ -1,5 +1,5 @@
 # 1) Base image
-FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 # Use bash for stricter RUNs
 SHELL ["/bin/bash", "-lc"]
@@ -44,6 +44,11 @@ RUN set -euxo pipefail; \
 # 5) Install ComfyUI Python deps
 WORKDIR ${COMFY_DIR}
 RUN pip3 install --upgrade pip && pip3 install -r requirements.txt
+
+# ✅ Ensure CUDA 12.4 GPU Torch wheels are installed
+RUN pip3 install --no-cache-dir --upgrade \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu124
 
 # 6) Custom nodes
 WORKDIR ${COMFY_DIR}/custom_nodes
