@@ -17,6 +17,10 @@ RUN set -euxo pipefail; \
         git curl ca-certificates tini ffmpeg build-essential python3 python3-pip; \
     apt-get clean; rm -rf /var/lib/apt/lists/*
 
+# 2.5) ✅ Install VS Code (code-server)
+# Puts `code-server` in PATH (/usr/bin/code-server)
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
 # 3) Set Comfy path and selectable ref
 ARG COMFY_REF=refs/heads/master   # you can override with a tag or commit SHA at build time
 ENV COMFY_DIR=/opt/ComfyUI
