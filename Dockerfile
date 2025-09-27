@@ -1,5 +1,5 @@
 # 1) Base image
-FROM nvidia/cuda:12.4.1-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
 
 # Use bash for stricter RUNs
 SHELL ["/bin/bash", "-lc"]
