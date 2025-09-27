@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# -------- Paths & ports --------
+# ---------------- Paths & ports ----------------
 export COMFY_DIR="${COMFY_DIR:-/opt/ComfyUI}"
 export PORT="${PORT:-3000}"
 
-# -------- Model choices via ENV VARS (override in RunPod Template) --------
-: "${FLUX_REPO:=black-forest-labs/FLUX.1-dev-gguf}"
-: "${FLUX_FILE:=flux1-dev.gguf}"
+# Optional: faster HF downloads
+export HF_HUB_ENABLE_HF_TRANSFER=1
 
-# Qwen precision toggle (native Comfy-Org packs): fp8 (default) or bf16
-: "${QWEN_EDIT_PRECISION:=fp8}"
+# ---------------- Optional self-update (ComfyUI & nodes) ----------------
+if [[ -n "${COMFY_SELF_UPDATE:-}" ]]; then
+  echo "[self-update] Updating ComfyUI..."
+  (cd "$COMFY_DIR" && git pull --rebase || true && pip3 install --quiet -r requirements.txt || true)
+  if [[ -n "${COMFY_NODES_SELF_UPDATE:-}" ]]; then
+    echo "[self-update] Updating custom_nodes..."
+    for repo in "ComfyUI-Manager" "ComfyUI-GGUF" "ComfyUI-VideoHelperSuite" "ComfyUI-WanVideoWrapper"; do
+      [[ -d "$COMFY_DIR/custom_nodes/$repo/.git" ]] && (cd "$COMFY_DIR/custom_nodes/$repo" && git pull --rebase || true)
+    done
+  fi
+fi
 
-: "${WAN_REPO:=Kijai/WanVideo_comfy}"
-: "${WAN_FILE:=wan-2.2-animate.safetensors}"
-
-# If true, wipe models each boot (ensures fresh downloads)
-: "${CLEAN_MODELS_ON_BOOT:=true}"
-
-# -------- Prepare ComfyUI model folders (inside the container) --------
+# ---------------- Model dirs (ephemeral) ----------------
 MODEL_ROOT="$COMFY_DIR/models"
 UNET_DIR="$MODEL_ROOT/unet"
 TXT_DIR="$MODEL_ROOT/text_encoders"
@@ -27,61 +29,103 @@ WAN_DIR="$MODEL_ROOT/diffusion_models"
 
 mkdir -p "$UNET_DIR" "$TXT_DIR" "$VAE_DIR" "$WAN_DIR"
 
+# Stateless: wipe models each boot
+: "${CLEAN_MODELS_ON_BOOT:=true}"
 if [[ "${CLEAN_MODELS_ON_BOOT}" == "true" ]]; then
   echo "[boot] Cleaning previous models in $MODEL_ROOT ..."
   rm -rf "${UNET_DIR:?}/"* "${TXT_DIR:?}/"* "${VAE_DIR:?}/"* "${WAN_DIR:?}/"*
 fi
 
-# -------- Download models on every start --------
-if [[ -z "${HF_TOKEN:-}" ]]; then
-  echo "[boot] HF_TOKEN not set. Set it in your RunPod template to enable auto-downloads."
-else
-  echo "[boot] Installing huggingface_hub ..."
-  # (hf_transfer speeds up downloads; harmless if already present)
-  pip3 install --quiet --upgrade huggingface_hub hf_transfer
-  export HF_HUB_ENABLE_HF_TRANSFER=1
+# ---------------- Helpers ----------------
+ensure_hf_cli() { pip3 install --quiet --upgrade huggingface_hub hf_transfer; }
 
-  # ---- FLUX (optional) ----
-  echo "[boot] Downloading FLUX ➜ $FLUX_REPO :: $FLUX_FILE"
-  huggingface-cli download --token "$HF_TOKEN" "$FLUX_REPO" "$FLUX_FILE" \
-    --local-dir "$UNET_DIR" --local-dir-use-symlinks False
-
-  # ---- Qwen-Image-Edit 2509 (native Comfy-Org packs) ----
-  # Diffusion (pick file by precision)
-  QWEN_EDIT_REPO="Comfy-Org/Qwen-Image-Edit_ComfyUI"
-  if [[ "$QWEN_EDIT_PRECISION" == "bf16" ]]; then
-    QWEN_EDIT_FILE="split_files/diffusion_models/qwen_image_edit_2509_bf16.safetensors"
+hf_dl() {
+  local repo="$1"; local path="$2"; local dest="$3"
+  if [[ -n "${HF_TOKEN:-}" ]]; then
+    huggingface-cli download --token "$HF_TOKEN" "$repo" "$path" \
+      --local-dir "$dest" --local-dir-use-symlinks False
   else
-    QWEN_EDIT_FILE="split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors"
+    huggingface-cli download "$repo" "$path" \
+      --local-dir "$dest" --local-dir-use-symlinks False
   fi
+}
 
-  echo "[boot] Downloading Qwen-Image-Edit 2509 ($QWEN_EDIT_PRECISION)…"
-  huggingface-cli download --token "$HF_TOKEN" "$QWEN_EDIT_REPO" "$QWEN_EDIT_FILE" \
-    --local-dir "$WAN_DIR" --local-dir-use-symlinks False
+# ---------------- Qwen-Image-Edit 2509 (Comfy-Org native packs) ----------------
+# Choose precision with QWEN_EDIT_PRECISION=fp8|bf16 (default fp8)
+: "${QWEN_EDIT_PRECISION:=fp8}"
+download_qwen_image_edit_2509_native() {
+  local edit_repo="Comfy-Org/Qwen-Image-Edit_ComfyUI"
+  local img_repo="Comfy-Org/Qwen-Image_ComfyUI"
+  local edit_file="split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors"
+  [[ "$QWEN_EDIT_PRECISION" == "bf16" ]] && edit_file="split_files/diffusion_models/qwen_image_edit_2509_bf16.safetensors"
 
-  # Text encoder + VAE from the companion pack
-  QWEN_IMG_REPO="Comfy-Org/Qwen-Image_ComfyUI"
+  echo "[qwen] Downloading Qwen-Image-Edit 2509 ($QWEN_EDIT_PRECISION)…"
+  hf_dl "$edit_repo" "$edit_file" "$WAN_DIR"
 
-  echo "[boot] Downloading Qwen text encoder (fp8_scaled)…"
-  huggingface-cli download --token "$HF_TOKEN" "$QWEN_IMG_REPO" \
-    "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
-    --local-dir "$TXT_DIR" --local-dir-use-symlinks False
+  echo "[qwen] Downloading Qwen text encoder (fp8_scaled)…"
+  hf_dl "$img_repo" "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" "$TXT_DIR"
 
-  echo "[boot] Downloading Qwen VAE…"
-  huggingface-cli download --token "$HF_TOKEN" "$QWEN_IMG_REPO" \
-    "split_files/vae/qwen_image_vae.safetensors" \
-    --local-dir "$VAE_DIR" --local-dir-use-symlinks False
+  echo "[qwen] Downloading Qwen VAE…"
+  hf_dl "$img_repo" "split_files/vae/qwen_image_vae.safetensors" "$VAE_DIR"
+}
 
-  # ---- WAN 2.2 Animate (optional) ----
-  echo "[boot] Downloading WAN 2.2 Animate ➜ $WAN_REPO :: $WAN_FILE"
-  huggingface-cli download --token "$HF_TOKEN" "$WAN_REPO" "$WAN_FILE" \
-    --local-dir "$WAN_DIR" --local-dir-use-symlinks False
+# ---------------- FLUX (optional; set FLUX_FILE to enable) ----------------
+: "${FLUX_REPO:=black-forest-labs/FLUX.1-dev-gguf}"
+: "${FLUX_FILE:=}"   # e.g. flux1-dev.gguf  (leave blank to skip)
+download_flux_if_configured() {
+  if [[ -n "$FLUX_FILE" ]]; then
+    echo "[flux] Downloading $FLUX_REPO :: $FLUX_FILE"
+    hf_dl "$FLUX_REPO" "$FLUX_FILE" "$UNET_DIR"
+  else
+    echo "[flux] Skipping (FLUX_FILE not set)."
+  fi
+}
+
+# ---------------- WAN 2.2 Animate (optional; set WAN_FILE to enable) ----------------
+: "${WAN_REPO:=Kijai/WanVideo_comfy}"
+: "${WAN_FILE:=}"    # e.g. wan-2.2-animate.safetensors  (leave blank to skip)
+download_wan_if_configured() {
+  if [[ -n "$WAN_FILE" ]]; then
+    echo "[wan] Downloading $WAN_REPO :: $WAN_FILE"
+    hf_dl "$WAN_REPO" "$WAN_FILE" "$WAN_DIR"
+  else
+    echo "[wan] Skipping (WAN_FILE not set)."
+  fi
+}
+
+# ---------------- Model downloads ----------------
+if [[ -z "${HF_TOKEN:-}" ]]; then
+  echo "[boot] HF_TOKEN not set. Skipping model auto-downloads."
+else
+  echo "[boot] Installing HF tooling..."
+  ensure_hf_cli
+  download_qwen_image_edit_2509_native
+  download_flux_if_configured
+  download_wan_if_configured
 fi
 
-# -------- Start ComfyUI --------
+# ---------------- VS Code (code-server only) ----------------
+# Enable with CODE_SERVER=1. Set CODE_SERVER_PASSWORD for auth (recommended).
+: "${CODE_SERVER_PORT:=8080}"
+if [[ -n "${CODE_SERVER:-}" ]]; then
+  echo "[code-server] Starting on :${CODE_SERVER_PORT}"
+  AUTH_FLAG="--auth none"
+  if [[ -n "${CODE_SERVER_PASSWORD:-}" ]]; then
+    export PASSWORD="$CODE_SERVER_PASSWORD"
+    AUTH_FLAG="--auth password"
+  fi
+  command -v code-server >/dev/null 2>&1 || { echo "[code-server] not found in PATH"; exit 1; }
+  code-server "$COMFY_DIR" --bind-addr "0.0.0.0:${CODE_SERVER_PORT}" $AUTH_FLAG &
+  CODE_PID=$!
+else
+  CODE_PID=""
+fi
+
+# ---------------- Start ComfyUI (foreground) ----------------
 echo "====================================================="
-echo "ComfyUI starting on port ${PORT}"
-echo "Models directory: ${MODEL_ROOT}  (ephemeral; refreshed each boot)"
+echo "ComfyUI : ${PORT}"
+[[ -n "${CODE_SERVER:-}" ]] && echo "VS Code : ${CODE_SERVER_PORT}"
+echo "Models  : ${MODEL_ROOT}  (ephemeral; re-downloaded each boot)"
 echo "====================================================="
 
 cd "$COMFY_DIR"
