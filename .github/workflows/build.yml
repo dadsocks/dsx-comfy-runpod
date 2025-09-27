@@ -30,4 +30,4 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/comfy-flux-wan-qwen:latest
+          tags: ghcr.io/${{ github.repository_owner }}/dsx-comfy-runpod:latest
