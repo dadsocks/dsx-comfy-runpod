@@ -47,15 +47,15 @@ ensure_hf_cli() {
 hf_dl() {
   local repo="$1"; local path="$2"; local dest="$3"
   local cmd="hf"
-  command -v hf >/dev/null 2>&1 || cmd="huggingface-cli"
+  command -v hf >/dev/null 2>&1 || cmd="huggingface-cli"  # fallback
 
   if [[ -n "${HF_TOKEN:-}" ]]; then
     "$cmd" download "$repo" "$path" \
       --token "$HF_TOKEN" \
-      --local-dir "$dest" --local-dir-use-symlinks False
+      --local-dir "$dest"
   else
     "$cmd" download "$repo" "$path" \
-      --local-dir "$dest" --local-dir-use-symlinks False
+      --local-dir "$dest"
   fi
 }
 
