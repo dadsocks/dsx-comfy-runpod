@@ -143,7 +143,8 @@ if [[ -n "${CODE_SERVER:-}" ]]; then
     AUTH_FLAG="--auth password"
   fi
   command -v code-server >/dev/null 2>&1 || { echo "[code-server] not found in PATH"; exit 1; }
-  code-server "$COMFY_DIR" --bind-addr "0.0.0.0:${CODE_SERVER_PORT}" $AUTH_FLAG &
+  # ✨ run code-server with PORT unset so it won't steal 3000
+  ( env -u PORT code-server "$COMFY_DIR" --bind-addr "0.0.0.0:${CODE_SERVER_PORT}" $AUTH_FLAG ) &
   CODE_PID=$!
 else
   CODE_PID=""
