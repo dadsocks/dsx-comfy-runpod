@@ -131,6 +131,25 @@ download_flux_if_configured() {
   fi
 }
 
+: "${FLUX_VAE_REPO:=}"
+: "${FLUX_VAE_FILE:=}"
+: "${FLUX_TENC_REPO:=}"
+: "${FLUX_TENC_FILE:=}"
+download_flux_extras_if_configured() {
+  if [[ -n "$FLUX_VAE_REPO" && -n "$FLUX_VAE_FILE" ]]; then
+    echo "[flux] Downloading VAE ➜ $FLUX_VAE_REPO :: $FLUX_VAE_FILE"
+    hf_dl "$FLUX_VAE_REPO" "$FLUX_VAE_FILE" "$VAE_DIR"
+  else
+    echo "[flux] VAE not set (FLUX_VAE_*)."
+  fi
+  if [[ -n "$FLUX_TENC_REPO" && -n "$FLUX_TENC_FILE" ]]; then
+    echo "[flux] Downloading text encoder ➜ $FLUX_TENC_REPO :: $FLUX_TENC_FILE"
+    hf_dl "$FLUX_TENC_REPO" "$FLUX_TENC_FILE" "$TXT_DIR"
+  else
+    echo "[flux] Text encoder not set (FLUX_TENC_*)."
+  fi
+}
+
 # ---------------- Manual WAN override (optional) ----------------
 : "${WAN_REPO:=}"    # leave empty to use Comfy-Org pack
 : "${WAN_FILE:=}"    # set both WAN_REPO and WAN_FILE to override
