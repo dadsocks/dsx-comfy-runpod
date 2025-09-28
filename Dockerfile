@@ -74,5 +74,5 @@ RUN chmod +x /usr/local/bin/start.sh
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
   CMD curl -f http://localhost:${PORT:-3000}/ || exit 1
 
-ENTRYPOINT ["/usr/bin/tini","--"]
+ENTRYPOINT ["/usr/bin/tini","-s","--"]
 CMD ["/usr/local/bin/start.sh"]
