@@ -59,6 +59,33 @@ hf_dl() {
   fi
 }
 
+# 🔧 Flatten split_files layout into proper ComfyUI folders
+flatten_split_files() {
+  # Move files up from split_files/* into the right model dirs
+  shopt -s nullglob
+  # diffusion_models
+  if compgen -G "$WAN_DIR/split_files/diffusion_models/*.safetensors" > /dev/null; then
+    echo "[fixup] Flattening diffusion_models -> $(basename "$WAN_DIR")"
+    mv "$WAN_DIR/split_files/diffusion_models/"*.safetensors "$WAN_DIR/" || true
+    rm -rf "$WAN_DIR/split_files" || true
+  fi
+  # text_encoders
+  if compgen -G "$TXT_DIR/split_files/text_encoders/*.safetensors" > /dev/null; then
+    echo "[fixup] Flattening text_encoders -> $(basename "$TXT_DIR")"
+    mv "$TXT_DIR/split_files/text_encoders/"*.safetensors "$TXT_DIR/" || true
+    rm -rf "$TXT_DIR/split_files" || true
+  fi
+  # vae
+  if compgen -G "$VAE_DIR/split_files/vae/*.safetensors" > /dev/null; then
+    echo "[fixup] Flattening vae -> $(basename "$VAE_DIR")"
+    mv "$VAE_DIR/split_files/vae/"*.safetensors "$VAE_DIR/" || true
+    rm -rf "$VAE_DIR/split_files" || true
+  fi
+  # Optional: free space (we redownload every boot anyway)
+  rm -rf "$MODEL_ROOT/.cache" "$WAN_DIR/.cache" "$TXT_DIR/.cache" "$VAE_DIR/.cache" || true
+  shopt -u nullglob
+}
+
 # ---------------- Qwen-Image-Edit 2509 (Comfy-Org native packs) ----------------
 : "${QWEN_EDIT_PRECISION:=fp8}"  # fp8 (default) or bf16
 download_qwen_image_edit_2509_native() {
@@ -128,8 +155,11 @@ else
 
   # Try manual WAN override first; if not set, pull Comfy-Org one-click
   if ! download_wan_if_configured; then
-    download_wan22_animate_comfy
+    download_wan22_animate_comfy || echo "[wan22] skipped (download error)"
   fi
+
+  # 🔧 Normalize layout so ComfyUI sees the files
+  flatten_split_files
 fi
 
 # ---------------- VS Code (code-server only) ----------------
@@ -143,7 +173,7 @@ if [[ -n "${CODE_SERVER:-}" ]]; then
     AUTH_FLAG="--auth password"
   fi
   command -v code-server >/dev/null 2>&1 || { echo "[code-server] not found in PATH"; exit 1; }
-  # ✨ run code-server with PORT unset so it won't steal 3000
+  # run code-server with PORT unset so it won't steal 3000
   ( env -u PORT code-server "$COMFY_DIR" --bind-addr "0.0.0.0:${CODE_SERVER_PORT}" $AUTH_FLAG ) &
   CODE_PID=$!
 else
