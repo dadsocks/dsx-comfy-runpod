@@ -11,11 +11,16 @@ export HF_HUB_ENABLE_HF_TRANSFER=1
 # ---------------- Optional self-update (ComfyUI & nodes) ----------------
 if [[ -n "${COMFY_SELF_UPDATE:-}" ]]; then
   echo "[self-update] Updating ComfyUI..."
-  (cd "$COMFY_DIR" && git pull --rebase || true && pip3 install --quiet -r requirements.txt || true)
+  (
+    cd "$COMFY_DIR"
+    git reset --hard HEAD || true
+    git pull --rebase --autostash || git pull --ff-only || true
+    pip3 install --quiet -r requirements.txt || true
+  )
   if [[ -n "${COMFY_NODES_SELF_UPDATE:-}" ]]; then
     echo "[self-update] Updating custom_nodes..."
     for repo in "ComfyUI-Manager" "ComfyUI-GGUF" "ComfyUI-VideoHelperSuite" "ComfyUI-WanVideoWrapper"; do
-      [[ -d "$COMFY_DIR/custom_nodes/$repo/.git" ]] && (cd "$COMFY_DIR/custom_nodes/$repo" && git pull --rebase || true)
+      [[ -d "$COMFY_DIR/custom_nodes/$repo/.git" ]] && (cd "$COMFY_DIR/custom_nodes/$repo" && git pull --rebase --autostash || git pull --ff-only || true)
     done
   fi
 fi
@@ -37,31 +42,25 @@ if [[ "${CLEAN_MODELS_ON_BOOT}" == "true" ]]; then
 fi
 
 # ---------------- Helpers ----------------
-# Ensure modern HF CLI ('hf') is available; keep hf_transfer for speed
 ensure_hf_cli() {
+  # Need >=0.23 for `hf` CLI; hf_transfer speeds up downloads
   pip3 install --quiet --upgrade "huggingface_hub>=0.23" hf_transfer
   export HF_HUB_ENABLE_HF_TRANSFER=1
 }
 
-# Use 'hf download' when available; fall back to 'huggingface-cli download'
 hf_dl() {
   local repo="$1"; local path="$2"; local dest="$3"
   local cmd="hf"
   command -v hf >/dev/null 2>&1 || cmd="huggingface-cli"  # fallback
-
   if [[ -n "${HF_TOKEN:-}" ]]; then
-    "$cmd" download "$repo" "$path" \
-      --token "$HF_TOKEN" \
-      --local-dir "$dest"
+    "$cmd" download "$repo" "$path" --token "$HF_TOKEN" --local-dir "$dest"
   else
-    "$cmd" download "$repo" "$path" \
-      --local-dir "$dest"
+    "$cmd" download "$repo" "$path" --local-dir "$dest"
   fi
 }
 
 # ---------------- Qwen-Image-Edit 2509 (Comfy-Org native packs) ----------------
-# Choose precision with QWEN_EDIT_PRECISION=fp8|bf16 (default fp8)
-: "${QWEN_EDIT_PRECISION:=fp8}"
+: "${QWEN_EDIT_PRECISION:=fp8}"  # fp8 (default) or bf16
 download_qwen_image_edit_2509_native() {
   local edit_repo="Comfy-Org/Qwen-Image-Edit_ComfyUI"
   local img_repo="Comfy-Org/Qwen-Image_ComfyUI"
@@ -78,6 +77,21 @@ download_qwen_image_edit_2509_native() {
   hf_dl "$img_repo" "split_files/vae/qwen_image_vae.safetensors" "$VAE_DIR"
 }
 
+# ---------------- WAN 2.2 Animate (Comfy-Org one-click) ----------------
+# If WAN_REPO & WAN_FILE are set, we'll use those as a manual override instead.
+download_wan22_animate_comfy() {
+  local repo="Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+
+  echo "[wan22] Downloading WAN 2.2 Animate 14B (BF16)…"
+  hf_dl "$repo" "split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors" "$WAN_DIR"
+
+  echo "[wan22] Downloading UMT5-XXL text encoder (recommended)…"
+  hf_dl "$repo" "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$TXT_DIR"
+
+  echo "[wan22] Downloading WAN 2.2 VAE…"
+  hf_dl "$repo" "split_files/vae/wan2.2_vae.safetensors" "$VAE_DIR"
+}
+
 # ---------------- FLUX (optional; set FLUX_FILE to enable) ----------------
 : "${FLUX_REPO:=black-forest-labs/FLUX.1-dev-gguf}"
 : "${FLUX_FILE:=}"   # e.g. flux1-dev.gguf  (leave blank to skip)
@@ -90,16 +104,16 @@ download_flux_if_configured() {
   fi
 }
 
-# ---------------- WAN 2.2 Animate (optional; set WAN_FILE to enable) ----------------
-: "${WAN_REPO:=Kijai/WanVideo_comfy}"
-: "${WAN_FILE:=}"    # e.g. wan-2.2-animate.safetensors  (leave blank to skip)
+# ---------------- Manual WAN override (optional) ----------------
+: "${WAN_REPO:=}"    # leave empty to use Comfy-Org pack
+: "${WAN_FILE:=}"    # set both WAN_REPO and WAN_FILE to override
 download_wan_if_configured() {
-  if [[ -n "$WAN_FILE" ]]; then
-    echo "[wan] Downloading $WAN_REPO :: $WAN_FILE"
+  if [[ -n "$WAN_REPO" && -n "$WAN_FILE" ]]; then
+    echo "[wan] Manual override ➜ $WAN_REPO :: $WAN_FILE"
     hf_dl "$WAN_REPO" "$WAN_FILE" "$WAN_DIR"
-  else
-    echo "[wan] Skipping (WAN_FILE not set)."
+    return 0
   fi
+  return 1
 }
 
 # ---------------- Model downloads ----------------
@@ -108,9 +122,14 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
 else
   echo "[boot] Installing HF tooling..."
   ensure_hf_cli
+
   download_qwen_image_edit_2509_native
   download_flux_if_configured
-  download_wan_if_configured
+
+  # Try manual WAN override first; if not set, pull Comfy-Org one-click
+  if ! download_wan_if_configured; then
+    download_wan22_animate_comfy
+  fi
 fi
 
 # ---------------- VS Code (code-server only) ----------------
