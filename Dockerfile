@@ -66,6 +66,36 @@ RUN set -eux; \
       pip3 install -r ${COMFY_DIR}/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt || true; \
     fi
 
+# --- Extra nodes required by your workflow ---
+
+# 6.a) ControlNet Aux (PixelPerfectResolution, DWPPreprocessor, etc.)
+RUN git clone https://github.com/Fannovel16/comfyui_controlnet_aux.git \
+    ${COMFY_DIR}/custom_nodes/comfyui_controlnet_aux && \
+    pip3 install --no-cache-dir -r ${COMFY_DIR}/custom_nodes/comfyui_controlnet_aux/requirements.txt || true
+
+# Optional: GPU acceleration for some Aux preprocessors via ONNX Runtime.
+# Set at build time:  --build-arg INSTALL_ONNX_GPU=1  (CUDA 12 wheels are hosted on MS feed)
+ARG INSTALL_ONNX_GPU=0
+RUN if [ "$INSTALL_ONNX_GPU" = "1" ]; then \
+      pip3 install --no-cache-dir --extra-index-url \
+        https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple \
+        onnxruntime-gpu ; \
+    else \
+      pip3 install --no-cache-dir onnxruntime ; \
+    fi
+
+# 6.b) SAM2 nodes (DownloadAndLoadSAM2Model, Sam2Segmentation)
+RUN git clone https://github.com/kijai/ComfyUI-segment-anything-2.git \
+    ${COMFY_DIR}/custom_nodes/ComfyUI-segment-anything-2 && \
+    # repo uses pyproject; -e installs deps if declared
+    pip3 install --no-cache-dir -e ${COMFY_DIR}/custom_nodes/ComfyUI-segment-anything-2 || true
+
+# 6.c) KJNodes (PointsEditor, DrawMaskOnImage, BlockifyMask, lots more)
+RUN git clone https://github.com/kijai/ComfyUI-KJNodes.git \
+    ${COMFY_DIR}/custom_nodes/ComfyUI-KJNodes
+# (KJNodes is pure-Python; no extra pip deps needed typically)
+
+
 # 7) Startup script and entrypoint
 WORKDIR ${COMFY_DIR}
 COPY start.sh /usr/local/bin/start.sh
