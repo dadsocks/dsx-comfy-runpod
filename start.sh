@@ -31,8 +31,10 @@ UNET_DIR="$MODEL_ROOT/unet"
 TXT_DIR="$MODEL_ROOT/text_encoders"
 VAE_DIR="$MODEL_ROOT/vae"
 WAN_DIR="$MODEL_ROOT/diffusion_models"
+CLIPV_DIR="$MODEL_ROOT/clip_vision"
+LORAS_DIR="$MODEL_ROOT/loras"
 
-mkdir -p "$UNET_DIR" "$TXT_DIR" "$VAE_DIR" "$WAN_DIR"
+mkdir -p "$UNET_DIR" "$TXT_DIR" "$VAE_DIR" "$WAN_DIR" "$CLIPV_DIR" "$LORAS_DIR"
 
 # Stateless: wipe models each boot
 : "${CLEAN_MODELS_ON_BOOT:=true}"
