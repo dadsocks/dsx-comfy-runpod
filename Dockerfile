@@ -95,6 +95,19 @@ RUN git clone https://github.com/kijai/ComfyUI-KJNodes.git \
     ${COMFY_DIR}/custom_nodes/ComfyUI-KJNodes
 # (KJNodes is pure-Python; no extra pip deps needed typically)
 
+ARG INSTALL_ONNX_GPU=0
+RUN set -eux; \
+    pip3 install --no-cache-dir \
+      matplotlib \
+      opencv-python-headless \
+      onnx ; \
+    if [ "$INSTALL_ONNX_GPU" = "1" ]; then \
+      pip3 install --no-cache-dir --extra-index-url \
+        https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple \
+        onnxruntime-gpu ; \
+    else \
+      pip3 install --no-cache-dir onnxruntime ; \
+    fi
 
 # 7) Startup script and entrypoint
 WORKDIR ${COMFY_DIR}
