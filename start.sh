@@ -162,6 +162,34 @@ download_wan_if_configured() {
   return 1
 }
 
+# ---------------- Your workflow-specific extras ----------------
+# clip_vision
+: "${CLIPV_REPO:=Comfy-Org/Wan_2.1_ComfyUI_repackaged}"
+: "${CLIPV_FILE:=split_files/clip_vision/clip_vision_h.safetensors}"
+# WAN 2.1 VAE
+: "${WAN21_VAE_REPO:=Comfy-Org/Wan_2.1_ComfyUI_repackaged}"
+: "${WAN21_VAE_FILE:=split_files/vae/wan_2.1_vae.safetensors}"
+# LoRAs
+: "${LORA_LIGHTX2V_REPO:=Kijai/WanVideo_comfy}"
+: "${LORA_LIGHTX2V_FILE:=Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors}"
+: "${LORA_RELIGHT_REPO:=Kijai/WanVideo_comfy}"
+: "${LORA_RELIGHT_FILE:=LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16.safetensors}"
+
+download_workflow_required_models() {
+  echo "[clip_vision] $CLIPV_REPO :: $CLIPV_FILE"
+  hf_dl "$CLIPV_REPO" "$CLIPV_FILE" "$CLIPV_DIR"
+
+  echo "[vae] $WAN21_VAE_REPO :: $WAN21_VAE_FILE"
+  hf_dl "$WAN21_VAE_REPO" "$WAN21_VAE_FILE" "$VAE_DIR"
+
+  echo "[lora] $LORA_LIGHTX2V_REPO :: $LORA_LIGHTX2V_FILE"
+  hf_dl "$LORA_LIGHTX2V_REPO" "$LORA_LIGHTX2V_FILE" "$LORAS_DIR"
+
+  echo "[lora] $LORA_RELIGHT_REPO :: $LORA_RELIGHT_FILE"
+  hf_dl "$LORA_RELIGHT_REPO" "$LORA_RELIGHT_FILE" "$LORAS_DIR"
+}
+
+
 # ---------------- Model downloads ----------------
 if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "[boot] HF_TOKEN not set. Skipping model auto-downloads."
@@ -176,7 +204,8 @@ else
   if ! download_wan_if_configured; then
     download_wan22_animate_comfy || echo "[wan22] skipped (download error)"
   fi
-
+  # Your workflow-specific extras (clip_vision + VAE + LoRAs)
+  download_workflow_required_models
   # 🔧 Normalize layout so ComfyUI sees the files
   flatten_split_files
 fi
