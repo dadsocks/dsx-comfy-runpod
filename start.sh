@@ -65,28 +65,87 @@ hf_dl() {
 flatten_split_files() {
   # Move files up from split_files/* into the right model dirs
   shopt -s nullglob
+
   # diffusion_models
   if compgen -G "$WAN_DIR/split_files/diffusion_models/*.safetensors" > /dev/null; then
     echo "[fixup] Flattening diffusion_models -> $(basename "$WAN_DIR")"
     mv "$WAN_DIR/split_files/diffusion_models/"*.safetensors "$WAN_DIR/" || true
     rm -rf "$WAN_DIR/split_files" || true
   fi
+
   # text_encoders
   if compgen -G "$TXT_DIR/split_files/text_encoders/*.safetensors" > /dev/null; then
     echo "[fixup] Flattening text_encoders -> $(basename "$TXT_DIR")"
     mv "$TXT_DIR/split_files/text_encoders/"*.safetensors "$TXT_DIR/" || true
     rm -rf "$TXT_DIR/split_files" || true
   fi
+
   # vae
   if compgen -G "$VAE_DIR/split_files/vae/*.safetensors" > /dev/null; then
     echo "[fixup] Flattening vae -> $(basename "$VAE_DIR")"
     mv "$VAE_DIR/split_files/vae/"*.safetensors "$VAE_DIR/" || true
     rm -rf "$VAE_DIR/split_files" || true
   fi
-  # Optional: free space (we redownload every boot anyway)
-  rm -rf "$MODEL_ROOT/.cache" "$WAN_DIR/.cache" "$TXT_DIR/.cache" "$VAE_DIR/.cache" || true
+
+  # clip_vision
+  if compgen -G "$CLIPV_DIR/split_files/clip_vision/*" > /dev/null; then
+    echo "[fixup] Flattening clip_vision -> $(basename "$CLIPV_DIR")"
+    mv "$CLIPV_DIR/split_files/clip_vision/"* "$CLIPV_DIR/" || true
+    rm -rf "$CLIPV_DIR/split_files" || true
+  fi
+  # add .safetensors if HF saved without extension
+  if [[ -f "$CLIPV_DIR/clip_vision_h" && ! -f "$CLIPV_DIR/clip_vision_h.safetensors" ]]; then
+    mv "$CLIPV_DIR/clip_vision_h" "$CLIPV_DIR/clip_vision_h.safetensors" || true
+  fi
+
+  # ---- LORAs: flatten known subfolders ----
+  # Lightx2v/*
+  if compgen -G "$LORAS_DIR/Lightx2v/*" > /dev/null; then
+    echo "[fixup] Flattening loras/Lightx2v -> loras"
+    for f in "$LORAS_DIR/Lightx2v/"*; do
+      base="$(basename "$f")"
+      if [[ -f "$f" ]]; then
+        [[ "$base" != *.safetensors ]] && mv "$f" "$LORAS_DIR/${base}.safetensors" || mv "$f" "$LORAS_DIR/$base"
+      fi
+    done
+    rm -rf "$LORAS_DIR/Lightx2v" || true
+  fi
+
+  # LoRAs/Wan22_relight/*
+  if compgen -G "$LORAS_DIR/LoRAs/Wan22_relight/*" > /dev/null; then
+    echo "[fixup] Flattening loras/LoRAs/Wan22_relight -> loras"
+    for f in "$LORAS_DIR/LoRAs/Wan22_relight/"*; do
+      base="$(basename "$f")"
+      if [[ -f "$f" ]]; then
+        [[ "$base" != *.safetensors ]] && mv "$f" "$LORAS_DIR/${base}.safetensors" || mv "$f" "$LORAS_DIR/$base"
+      fi
+    done
+    rm -rf "$LORAS_DIR/LoRAs" || true
+  fi
+
+  # Generic: move any *.safetensors from one-level subfolders of loras up
+  for f in "$LORAS_DIR"/*/*.safetensors; do
+    mv "$f" "$LORAS_DIR/" || true
+  done
+  # Add .safetensors to any lora file that somehow lacks an extension
+  for f in "$LORAS_DIR"/*; do
+    [[ -f "$f" && "${f##*.}" = "$f" ]] && mv "$f" "$f.safetensors" || true
+  done
+  # Remove empty dirs
+  find "$LORAS_DIR" -mindepth 1 -type d -empty -delete || true
+
+  # Clean caches (we redownload every boot anyway)
+  rm -rf \
+    "$MODEL_ROOT/.cache" \
+    "$WAN_DIR/.cache" \
+    "$TXT_DIR/.cache" \
+    "$VAE_DIR/.cache" \
+    "$CLIPV_DIR/.cache" \
+    "$LORAS_DIR/.cache" || true
+
   shopt -u nullglob
 }
+
 
 # ---------------- Qwen-Image-Edit 2509 (Comfy-Org native packs) ----------------
 : "${QWEN_EDIT_PRECISION:=fp8}"  # fp8 (default) or bf16
