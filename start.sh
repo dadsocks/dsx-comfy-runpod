@@ -146,7 +146,6 @@ flatten_split_files() {
   shopt -u nullglob
 }
 
-
 # ---------------- Qwen-Image-Edit 2509 (Comfy-Org native packs) ----------------
 : "${QWEN_EDIT_PRECISION:=fp8}"  # fp8 (default) or bf16
 download_qwen_image_edit_2509_native() {
@@ -211,6 +210,45 @@ download_flux_extras_if_configured() {
   fi
 }
 
+# ---------------- FLUX encoders + VAE (HF repos/paths) ----------------
+# Set these in your RunPod template env, or hardcode defaults here.
+: "${T5XXL_REPO:=}"     # e.g. black-forest-labs/FLUX.1-dev
+: "${T5XXL_PATH:=t5/t5xxl_fp16.safetensors}"
+
+: "${CLIP_L_REPO:=}"    # e.g. black-forest-labs/FLUX.1-dev
+: "${CLIP_L_PATH:=clip_l.safetensors}"
+
+: "${FLUX_AE_REPO:=}"   # e.g. black-forest-labs/FLUX.1-dev
+: "${FLUX_AE_PATH:=ae.safetensors}"
+
+download_flux_textenc_and_vae_hf() {
+  echo "[flux-extras] Downloading t5xxl_fp16, clip_l, and ae.safetensors via HF…"
+
+  # t5xxl_fp16 -> models/text_encoders/t5/t5xxl_fp16.safetensors
+  if [[ -n "$T5XXL_REPO" ]]; then
+    mkdir -p "$TXT_DIR/t5"
+    hf_dl "$T5XXL_REPO" "$T5XXL_PATH" "$TXT_DIR/t5"
+  else
+    echo "[flux-extras] T5XXL_REPO not set (skip)"
+  fi
+
+  # clip_l -> models/text_encoders/clip_l.safetensors
+  if [[ -n "$CLIP_L_REPO" ]]; then
+    mkdir -p "$TXT_DIR"
+    hf_dl "$CLIP_L_REPO" "$CLIP_L_PATH" "$TXT_DIR"
+  else
+    echo "[flux-extras] CLIP_L_REPO not set (skip)"
+  fi
+
+  # ae.safetensors -> models/vae/ae.safetensors
+  if [[ -n "$FLUX_AE_REPO" ]]; then
+    mkdir -p "$VAE_DIR"
+    hf_dl "$FLUX_AE_REPO" "$FLUX_AE_PATH" "$VAE_DIR"
+  else
+    echo "[flux-extras] FLUX_AE_REPO not set (skip)"
+  fi
+}
+
 # ---------------- Manual WAN override (optional) ----------------
 : "${WAN_REPO:=}"    # leave empty to use Comfy-Org pack
 : "${WAN_FILE:=}"    # set both WAN_REPO and WAN_FILE to override
@@ -250,7 +288,6 @@ download_workflow_required_models() {
   hf_dl "$LORA_RELIGHT_REPO" "$LORA_RELIGHT_FILE" "$LORAS_DIR"
 }
 
-
 # ---------------- Model downloads ----------------
 if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "[boot] HF_TOKEN not set. Skipping model auto-downloads."
@@ -260,6 +297,9 @@ else
 
   download_qwen_image_edit_2509_native
   download_flux_if_configured
+
+  # 🔽 Added: ensure t5xxl_fp16, clip_l, and ae.safetensors are present
+  download_flux_textenc_and_vae_hf
 
   # Try manual WAN override first; if not set, pull Comfy-Org one-click
   if ! download_wan_if_configured; then
