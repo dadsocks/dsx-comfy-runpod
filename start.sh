@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Normalize HF token env name (supports HF_TOKEN)
+if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -n "${HF_TOKEN:-}" ]]; then
+  export HUGGINGFACE_HUB_TOKEN="${HF_TOKEN}"
+  echo "[start] Using HF token from HF_TOKEN"
+fi
 
 # --------- Config ---------
 : "${COMFY_DIR:=/opt/ComfyUI}"
